@@ -538,7 +538,7 @@ function stopAudio(){
   if(CUR_URL){try{URL.revokeObjectURL(CUR_URL);}catch(e){}CUR_URL=null;}
 }
 function getPack(i){
-  if(!PACKBUF[i])PACKBUF[i]=fetch('audio/'+PACKS[i]).then(r=>{if(!r.ok)throw new Error('pack');return r.arrayBuffer();}).catch(e=>{delete PACKBUF[i];throw e;});
+  if(!PACKBUF[i])PACKBUF[i]=fetch(PACKS[i]).then(r=>{if(!r.ok)throw new Error('pack');return r.arrayBuffer();}).catch(e=>{delete PACKBUF[i];throw e;});
   return PACKBUF[i];
 }
 function playBlob(b,fail){

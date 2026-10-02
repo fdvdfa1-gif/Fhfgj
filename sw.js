@@ -1,6 +1,6 @@
 // Nihon Diary service worker: lets the app open and work offline.
 // Bump CACHE whenever you upload a changed index.html so phones pick up the update.
-const CACHE = 'nd-cache-v3';
+const CACHE = 'nd-cache-v4';
 const FILES = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
@@ -25,7 +25,7 @@ self.addEventListener('fetch', e => {
   if (req.method !== 'GET' || url.origin !== location.origin) return;
 
   // Voice packs never change: serve from cache first, fetch once if missing.
-  if (url.pathname.includes('/audio/')) {
+  if (url.pathname.endsWith('.bin')) {
     e.respondWith(
       caches.match(req).then(hit => hit || fetch(req).then(res => {
         if (res && res.status === 200) { const copy = res.clone(); caches.open(CACHE).then(c => c.put(req, copy)); }

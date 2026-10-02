@@ -7,7 +7,7 @@ Static site: no build step, no server, no accounts. Progress is stored in the br
 - `index.html` the whole app
 - `manifest.webmanifest`, `icon-192.png`, `icon-512.png` make it installable
 - `sw.js` offline support (bump `CACHE` inside it after changing `index.html`)
-- `audio/v1.bin` ... `v6.bin` voice packs (about 8.7 MB total)
+- `v1.bin` ... `v6.bin` voice packs (about 8.7 MB total)
 
 ## Voices
 1. Bundled native-speaker clips for about 2,600 words (used first).
