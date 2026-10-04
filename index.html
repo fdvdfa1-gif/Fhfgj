@@ -438,9 +438,9 @@ const STAGE_IDS=STAGES.map((s,si)=>UNITS.filter(u=>u.stage===si).reduce((a,u)=>a
 const SEAL={h:'ひ',k:'カ',j:'漢',w:'語',v:'語',s:'文',g:'法'};
 
 /* ================= STATE + STORAGE ================= */
-const DEF=()=>({v:2,xp:0,coins:0,freeze:0,cards:{},log:{},streak:{n:0,last:''},best:0,bestCombo:0,answers:0,correct:0,sessions:0,blitzes:0,hiBlitz:0,badges:{},miles:{},goalDay:'',quests:null,settings:{sound:true,speak:true,online:true,romaji:true,reading:true,perSession:5,revCap:15,goal:50}});
+const DEF=()=>({v:2,xp:0,coins:0,freeze:0,cards:{},log:{},streak:{n:0,last:''},best:0,bestCombo:0,answers:0,correct:0,sessions:0,blitzes:0,hiBlitz:0,badges:{},miles:{},goalDay:'',quests:null,lastIds:[],lastFresh:[],settings:{revN:20,sound:true,speak:true,online:true,romaji:true,reading:true,perSession:5,revCap:15,goal:50}});
 let S=DEF();
-const SKEY='nd:state:v2';
+const SKEY='nd:state:v3';
 const Store={
   load:function(){
     try{const raw=localStorage.getItem(SKEY);if(raw)return JSON.parse(raw);}catch(e){}
@@ -476,7 +476,7 @@ function ensureQuests(){
   while(pick.length<3){const i=x%pool.length;pick.push(pool.splice(i,1)[0]);x=Math.floor(x/7)+13*pick.length+1;}
   S.quests={date:t,list:pick.map(q=>({id:q.id,have:0,done:false})),chest:false};
 }
-function qprog(id,n,mode){
+function qprog(id,n,mode){if(Sx&&Sx.review)return;
   ensureQuests();
   S.quests.list.forEach(function(q){
     if(q.id!==id||q.done)return;
@@ -628,6 +628,7 @@ function startSession(){
   if(!Sx.queue.length)shuffle(Object.keys(S.cards)).slice(0,10).forEach(id=>Sx.queue.push({id:id,relearn:true}));
   if(!Sx.queue.length){Sx=null;return;}
   Sx.queue.forEach(e=>Sx.uniq.add(e.id));
+  S.lastIds=Array.from(Sx.uniq);S.lastFresh=p.fresh.slice();
   if(Sx.lessons.length){view='lesson';ensure(Sx.lessons[0]);render();if(S.settings.speak&&BYID[Sx.lessons[0]].kind!=='g')speakIt(BYID[Sx.lessons[0]]);}
   else beginQuiz();
 }
@@ -659,22 +660,23 @@ function pick(i){
     gain=(10+Math.min(Sx.combo,10))*(feverNow?2:1);q.lucky=Math.random()<.12;if(q.lucky)gain+=15;
     q.fever=feverNow;
     if(Sx.combo===10)sfx('fever');else sfx('ok');
-    vib(12);if(Sx.combo%5===0)S.coins++;Sx.right++;
+    vib(12);if(!Sx.review&&Sx.combo%5===0)S.coins++;Sx.right++;
     qprog('cmb',Sx.combo,'max');
   }else{Sx.combo=0;Sx.wrong++;sfx('bad');vib([30,40,30]);}
-  q.gain=gain;
+  if(Sx.review)gain=0;q.gain=gain;
   if(!ent.relearn)grade(c,ok,ms);
   Sx.tries[it.id]=(Sx.tries[it.id]||0)+1;
   if(!ok&&Sx.tries[it.id]<4)Sx.queue.splice(Math.min(3,Sx.queue.length),0,{id:it.id,relearn:c.step>=2});
   else if(ok&&c.step<2&&!ent.relearn&&Sx.tries[it.id]<4)Sx.queue.splice(Math.min(5,Sx.queue.length),0,{id:it.id});
   else Sx.cleared.add(it.id);
-  if(gain){addXP(gain);if(goalCheck())q.goal=true;}
+  if(gain&&!Sx.review){addXP(gain);if(goalCheck())q.goal=true;}
   Store.save();
   render();
   if(S.settings.speak&&it.kind!=='s'&&it.kind!=='g')speakIt(it);
   if(ok){const tq=q;Sx.timer=setTimeout(function(){if(Sx&&Sx.q===tq)next();},1100);}
 }
 function finish(){
+  if(Sx.review){Store.save();view='summary';render();sfx('win');vib([20,30,20]);return;}
   addXP(20);S.coins+=3;S.sessions++;
   const n=Sx.right+Sx.wrong,acc=n?Sx.right/n:0;
   qprog('new',Sx.fresh.length,'add');qprog('ses',1,'add');
@@ -759,6 +761,7 @@ function homeV(){
    '<div class="hero"><div class="gr"><div class="jp">'+g[0]+'</div><div class="ro">'+g[1]+'</div></div>'+ring(xt/goal,Math.min(xt,goal)+'/'+goal)+'</div>'+
    '<div class="chips"><div class="chip">🔥 '+curStreak()+'</div><div class="chip">🪙 '+S.coins+'</div><div class="chip">❄️ '+S.freeze+'</div><div class="chip">'+p.back+' due</div></div>'+
    '<button class="btn" data-act="start">'+cta+'</button>'+blitz+
+   (nCards>=1?'<button class="btn alt" data-act="review">🔁 Review<small>Repeat lessons and practise what you know</small></button>':'<button class="btn alt" disabled>🔁 Review unlocks after your first lesson</button>')+
    (S.coins>=250&&S.freeze<3?'<button class="btn alt" data-act="buyfreeze">❄️ Buy a streak freeze · 250 🪙</button>':'')+
    '<h2>Daily quests</h2><div class="card">'+qs+chestBtn+'</div>'+
    '<h2>Road to JLPT N2</h2>'+stg+'</div>'+navV();
@@ -815,7 +818,7 @@ function quizV(){
   let sheet='';
   if(Sx.answered&&!blitz){
     const ok=q.opts[q.chosen].ok;
-    sheet='<div class="sheet '+(ok?'ok':'bad')+'" data-act="next"><div class="sh1"><b>'+(ok?(q.fever?'FEVER! +':q.lucky?'Lucky bonus! +':'Nice! +')+q.gain+(q.goal?' · 🎯 Daily goal! +20 🪙':''):'Not quite')+'</b>'+((canHear(it)&&it.kind!=='g')?'<button class="say" data-act="say" data-id="'+esc(it.id)+'" aria-label="Play sound">🔊</button>':'')+'</div><div class="sh2">'+detail(it)+'</div><button class="btn" data-act="next">Continue</button></div>';
+    sheet='<div class="sheet '+(ok?'ok':'bad')+'" data-act="next"><div class="sh1"><b>'+(ok?(Sx.review?'Correct!':(q.fever?'FEVER! +':q.lucky?'Lucky bonus! +':'Nice! +')+q.gain)+(q.goal?' · 🎯 Daily goal! +8 🪙':''):'Not quite')+'</b>'+((canHear(it)&&it.kind!=='g')?'<button class="say" data-act="say" data-id="'+esc(it.id)+'" aria-label="Play sound">🔊</button>':'')+'</div><div class="sh2">'+detail(it)+'</div><button class="btn" data-act="next">Continue</button></div>';
   }
   let top;
   const cmb=Sx.combo>1?(Sx.combo>=10?'🔥 x2 '+Sx.combo:'🔥 '+Sx.combo):'';
@@ -826,10 +829,11 @@ function quizV(){
 }
 
 function summaryV(){
+  if(Sx.review)return reviewSumV();
   const blitz=Sx.mode==='blitz',xt=S.log[tkey()]||0,goal=S.settings.goal;
   const n=Sx.right+Sx.wrong,acc=n?Math.round(Sx.right/n*100):0;
   const bd=Sx.badges.map(b=>'<span class="badge">🏅 '+esc(b)+'</span>').join('');
-  const qd=Sx.quest.map(t=>'<div class="banner good">✓ Quest: '+esc(t)+'</div>').join('')+(Sx.flawless?'<div class="banner good">💎 Flawless round! +30 XP</div>':'')+(Sx.goalHit?'<div class="banner good">🎯 Daily goal reached! +20 🪙</div>':'')+(Sx.mile?'<div class="banner good">🔥 '+Sx.mile.n+'-day streak! +'+Sx.mile.r+' 🪙</div>':'');
+  const qd=Sx.quest.map(t=>'<div class="banner good">✓ Quest: '+esc(t)+'</div>').join('')+(Sx.flawless?'<div class="banner good">💎 Flawless round! +30 XP</div>':'')+(Sx.goalHit?'<div class="banner good">🎯 Daily goal reached! +8 🪙</div>':'')+(Sx.mile?'<div class="banner good">🔥 '+Sx.mile.n+'-day streak! +'+Sx.mile.r+' 🪙</div>':'');
   const streak='<div style="display:flex;justify-content:center;align-items:center;gap:14px;margin-bottom:14px">'+ring(xt/goal,Math.min(xt,goal)+'/'+goal)+'<div style="text-align:left"><b>🔥 '+curStreak()+' day streak</b><br><span style="color:var(--mut);font-size:.9rem">'+(xt>=goal?'Daily goal done!':(goal-xt)+' XP to today\'s goal')+'</span></div></div>';
   const lv=Sx.lvUp?'<div class="lvup">Level up! You are now level '+level()+(Sx.lvCoins?' · +'+Sx.lvCoins+' 🪙':'')+'</div>':'';
   if(blitz)return '<div class="pad sum"><div class="big">'+Sx.score+'</div><div style="color:var(--mut)">'+(Sx.newHi?'New personal best!':'Best: '+S.hiBlitz)+'</div>'+lv+
@@ -896,19 +900,205 @@ function backupV(){
 }
 
 function render(){
-  $app.innerHTML=view==='home'?homeV():view==='me'?meV():view==='album'?albumV():view==='lesson'?lessonV():view==='quiz'?quizV():view==='backup'?backupV():summaryV();
+  $app.innerHTML=view==='home'?homeV():view==='me'?meV():view==='album'?albumV():view==='lesson'?lessonV():view==='quiz'?quizV():view==='backup'?backupV():view==='review'?reviewV():view==='speak'?speakV():summaryV();
   if(view!==lastView){window.scrollTo(0,0);lastView=view;}
+}
+
+
+/* ---- Review: repeat lessons and practise anything you have met ---- */
+function revPool(m,si){
+  const have=id=>S.cards[id]&&BYID[id];
+  if(m==='last')return (S.lastIds||[]).filter(have);
+  if(m==='mix')return Object.keys(S.cards).filter(have);
+  if(m==='weak')return Object.keys(S.cards).filter(have).filter(id=>(S.cards[id].lapses||0)>0||S.cards[id].step<2).sort((a,b)=>((S.cards[b].lapses||0)-(S.cards[a].lapses||0))||((S.cards[a].st||0)-(S.cards[b].st||0)));
+  if(m==='new')return ORDER.filter(have);
+  if(m==='stage')return STAGE_IDS[+si].filter(have);
+  return [];
+}
+function startReview(m,si){
+  clearTimers();stopAudio();
+  const n=S.settings.revN||20;let ids=revPool(m,si);
+  if(!ids.length){flash='Nothing to review there yet.';view='review';render();return;}
+  if(m==='weak')ids=ids.slice(0,n);
+  else if(m==='new')ids=shuffle(ids.slice(-n));
+  else if(m==='last')ids=shuffle(ids.slice());
+  else ids=shuffle(ids.slice()).slice(0,n);
+  const les=m==='last'?(S.lastFresh||[]).filter(id=>BYID[id]):[];
+  Sx={mode:'std',review:true,rvArgs:{m:m,s:si},queue:[],uniq:new Set(),cleared:new Set(),tries:{},combo:0,best:0,xp:0,right:0,wrong:0,fresh:[],lessons:les,li:0,lv0:level(),answered:false,q:null,badges:[],quest:[],timer:null,chest:null,fever:false};
+  ids.forEach(id=>Sx.queue.push({id:id,relearn:true}));
+  Sx.queue.forEach(e=>Sx.uniq.add(e.id));
+  if(Sx.lessons.length){view='lesson';ensure(Sx.lessons[0]);render();if(S.settings.speak&&BYID[Sx.lessons[0]].kind!=='g')speakIt(BYID[Sx.lessons[0]]);}
+  else beginQuiz();
+}
+function reviewV(){
+  const n=S.settings.revN||20,nC=Object.keys(S.cards).length;
+  const last=revPool('last').length,weak=revPool('weak').length;
+  let banner='';if(flash){banner='<div class="banner">'+esc(flash)+'</div>';flash='';}
+  const btn=(m,si,t,sub,dis)=>'<button class="btn alt" '+(dis?'disabled ':'')+'data-act="rv" data-m="'+m+'"'+(si!=null?' data-s="'+si+'"':'')+'>'+t+'<small>'+sub+'</small></button>';
+  const seg='<div class="seg">'+[10,20,40].map(v=>'<button class="'+(n===v?'on':'')+'" data-act="set" data-k="revN" data-v="'+v+'">'+v+'</button>').join('')+'</div>';
+  const stg=STAGES.map(function(st,si){const k=STAGE_IDS[si].filter(id=>S.cards[id]).length;return k?btn('stage',si,esc(st.name),k+' started · '+Math.min(n,k)+' per round',false):'';}).join('');
+  return '<div class="pad"><div class="top"><div class="brand">Review</div><button class="mini" data-act="home">Back</button></div>'+
+   '<p style="color:var(--mut)">Practise what you have already met. Reviews give no XP or coins and do not change your schedule.</p>'+banner+
+   '<div class="row"><b>Questions per round</b>'+seg+'</div>'+
+   '<button class="btn gold" '+(spkPool().length&&SRC?'':'disabled ')+'data-act="spkstart">🎤 Speaking practice<small>'+(!SRC?'Needs Chrome speech recognition':spkPool().length?'Say words aloud and get checked':'Learn a few words first')+'</small></button>'+
+   btn('last',null,'🔁 Repeat my last lesson',last?'Re-read the new items, then the same '+last+' questions again':'Finish a normal session first',!last)+
+   btn('mix',null,'🎲 Mixed review',nC?'Random items from everything you have started':'Start a lesson first',!nC)+
+   btn('weak',null,'🎯 Weak spots',weak?'Items you missed or are still learning':'Nothing weak right now',!weak)+
+   btn('new',null,'🆕 Newest items',nC?'The most recent things you started':'Start a lesson first',!nC)+
+   (stg?'<h2>By stage</h2>'+stg:'')+'</div>'+navV();
+}
+function reviewSumV(){
+  const n=Sx.right+Sx.wrong,acc=n?Math.round(Sx.right/n*100):0,a=Sx.rvArgs||{m:'mix'};
+  return '<div class="pad sum"><div class="big">おつかれさま</div><div style="color:var(--mut)">Otsukaresama · nice practice</div>'+
+   '<div class="grid"><div class="stat"><b>'+acc+'%</b><span>accuracy</span></div><div class="stat"><b>'+Sx.uniq.size+'</b><span>items practised</span></div><div class="stat"><b>'+Sx.best+'</b><span>best combo</span></div><div class="stat"><b>'+n+'</b><span>answers</span></div></div>'+
+   '<div class="credit" style="margin:0 0 14px">Review rounds give no XP or coins and do not change your schedule.</div>'+
+   '<button class="btn" data-act="rv" data-m="'+a.m+'"'+(a.s!=null?' data-s="'+a.s+'"':'')+'>Repeat this review</button><button class="btn alt" data-act="review">Other reviews</button><button class="btn alt" data-act="home">Back home</button></div>';
+}
+
+
+/* ---- Speaking practice: say the word, the phone's speech recognizer checks it ---- */
+const SRC=window.SpeechRecognition||window.webkitSpeechRecognition;
+let Sp=null,SPREC=null,REVMAP=null;
+const toHira=t=>String(t).replace(/[\u30A1-\u30F6]/g,c=>String.fromCharCode(c.charCodeAt(0)-0x60));
+const DIG={'0':'零','1':'一','2':'二','3':'三','4':'四','5':'五','6':'六','7':'七','8':'八','9':'九','10':'十'};
+function normSp(t){
+  t=String(t).normalize('NFKC').toLowerCase();
+  if(DIG[t])t=DIG[t];
+  return toHira(t).replace(/[\s、。，．,.!?！？「」『』~〜～・]/g,'');
+}
+function cleanRd(r){return normSp(String(r).replace(/\(.*?\)|（.*?）/g,''));}
+function spkReads(it){
+  const rs=String(it.r||'').split(/[;、]/).map(cleanRd).filter(x=>/^[\u3041-\u3096ー]+$/.test(x));
+  if(!rs.length){const f=normSp(fbText(it));if(/^[\u3041-\u3096ー]+$/.test(f))rs.push(f);}
+  return rs;
+}
+function buildRevMap(){
+  REVMAP={};
+  ITEMS.forEach(function(x){
+    if(x.kind!=='v'&&x.kind!=='w')return;
+    spkReads(x).forEach(function(rd){
+      const set=REVMAP[rd]||(REVMAP[rd]=new Set());
+      String(x.c).split(/[;、]/).forEach(f=>{f=normSp(f.replace(/\(.*?\)/g,''));if(f)set.add(f);});
+      if(x.kj)set.add(normSp(x.kj));
+    });
+  });
+}
+function lev(a,b){
+  const m=a.length,n=b.length;if(!m)return n;if(!n)return m;
+  let p=[];for(let j=0;j<=n;j++)p[j]=j;
+  for(let i=1;i<=m;i++){const c=[i];for(let j=1;j<=n;j++)c[j]=Math.min(p[j]+1,c[j-1]+1,p[j-1]+(a[i-1]===b[j-1]?0:1));p=c;}
+  return p[n];
+}
+function spkJudge(it,alts){
+  if(!REVMAP)buildRevMap();
+  const reads=spkReads(it);
+  const ok=new Set(reads);
+  reads.forEach(rd=>{(REVMAP[rd]||[]).forEach(f=>ok.add(f));});
+  String(it.c).split(/[;、]/).forEach(f=>{f=normSp(f.replace(/\(.*?\)/g,''));if(f)ok.add(f);});
+  if(it.kj)ok.add(normSp(it.kj));
+  let best='miss';
+  for(const a of alts){
+    const n=normSp(a);if(!n)continue;
+    if(ok.has(n))return 'ok';
+    if(/^[\u3041-\u3096ー]+$/.test(n)){
+      reads.forEach(function(rd){const r=1-lev(n,rd)/Math.max(n.length,rd.length);if(r>=.7)best='close';});
+    }
+  }
+  return best;
+}
+function spkPool(){
+  return Object.keys(S.cards).filter(function(id){const it=BYID[id];return it&&(it.kind==='v'||it.kind==='w')&&spkReads(it).some(r=>r.length>=2);});
+}
+function startSpeak(){
+  clearTimers();stopAudio();Sx=null;
+  if(!SRC){flash='Speaking practice needs speech recognition. Open this app in Chrome (Android or desktop).';view='review';render();return;}
+  const pool=spkPool();
+  if(!pool.length){flash='Learn a few words first, then come back to practise speaking.';view='review';render();return;}
+  const n=Math.min(S.settings.revN>=40?15:10,pool.length);
+  Sp={ids:shuffle(pool.slice()).slice(0,n),i:0,tries:0,heard:'',res:null,msg:'',listening:false,results:[],missed:[]};
+  view='speak';render();
+}
+function spkAbort(){try{if(SPREC){SPREC.onresult=SPREC.onerror=SPREC.onend=null;SPREC.abort();}}catch(e){}SPREC=null;if(Sp)Sp.listening=false;}
+function spkListen(){
+  if(!Sp||Sp.listening||!SRC)return;
+  stopAudio();spkAbort();
+  const it=BYID[Sp.ids[Sp.i]];
+  const r=new SRC();SPREC=r;r.lang='ja-JP';r.interimResults=false;r.maxAlternatives=5;r.continuous=false;
+  Sp.listening=true;Sp.msg='';Sp.res=null;Sp.heard='';
+  r.onresult=function(ev){
+    const alts=[];
+    try{const res=ev.results[ev.results.length-1];for(let k=0;k<res.length;k++)alts.push(res[k].transcript);}catch(e){}
+    if(!Sp)return;
+    Sp.heard=alts[0]||'';Sp.tries++;Sp.res=alts.length?spkJudge(it,alts):'miss';
+    if(Sp.res==='ok'){sfx('ok');vib(12);}else sfx('bad');
+  };
+  r.onerror=function(ev){
+    if(!Sp)return;
+    const e=ev&&ev.error;
+    Sp.msg=e==='not-allowed'||e==='service-not-allowed'?'Microphone is blocked. Allow the microphone for this site in Chrome settings, then try again.'
+      :e==='no-speech'?'I did not hear anything. Tap the mic and speak right after it turns red.'
+      :e==='network'?'Speech recognition needs an internet connection.'
+      :e==='audio-capture'?'No microphone found.':'Could not listen ('+(e||'error')+'). Try again.';
+    Sp.listening=false;render();
+  };
+  r.onend=function(){if(Sp){Sp.listening=false;render();}};
+  try{r.start();}catch(e){Sp.listening=false;Sp.msg='Could not start the microphone.';}
+  render();
+}
+function spkNext(){
+  if(!Sp)return;
+  const id=Sp.ids[Sp.i],good=Sp.res==='ok';
+  Sp.results.push(good?(Sp.tries<=1?'first':'later'):'miss');
+  if(!good)Sp.missed.push(id);
+  spkAbort();
+  Sp.i++;Sp.tries=0;Sp.heard='';Sp.res=null;Sp.msg='';
+  if(Sp.i>=Sp.ids.length)Sp.done=true;
+  render();
+}
+function speakV(){
+  if(Sp.done)return speakSumV();
+  const it=BYID[Sp.ids[Sp.i]],reads=spkReads(it);
+  const dots='<div class="dots">'+Sp.ids.map((_,i)=>'<i class="'+(i<=Sp.i?'on':'')+'"></i>').join('')+'</div>';
+  let res='';
+  if(Sp.msg)res='<div class="banner">'+esc(Sp.msg)+'</div>';
+  else if(Sp.res==='ok')res='<div class="banner good">✅ Match! I heard: '+esc(Sp.heard)+'</div>';
+  else if(Sp.res==='close')res='<div class="banner">🟡 Close. I heard: '+esc(Sp.heard)+'. Listen to the model, then try again.</div>';
+  else if(Sp.res==='miss')res='<div class="banner">❌ I heard: '+esc(Sp.heard||'nothing clear')+'. Listen to the model, then try again.</div>';
+  const fin=Sp.res==='ok'||Sp.tries>=3;
+  const reveal=fin&&Sp.res!=='ok'?'<div class="banner">The reading is <b>'+esc(reads[0]||it.r)+'</b>. Moving on is fine, you can practise it in Review later.</div>':'';
+  const mic=Sp.listening?'<button class="btn gold" disabled>🔴 Listening… speak now</button>'
+    :'<button class="btn gold" data-act="spkgo">🎤 '+(Sp.tries?'Try again':'Tap and say it')+'<small>Say the word clearly, in a quiet place</small></button>';
+  return '<div class="pad"><div class="top"><button class="x" data-act="quit" aria-label="Quit">×</button><div style="font-weight:700;color:var(--mut)">Speaking · '+(Sp.i+1)+'/'+Sp.ids.length+'</div><span></span></div>'+dots+
+   '<div style="text-align:center;margin:10px 0 16px"><div class="gl serif" style="font-size:'+(gsize(it.c)>60?60:gsize(it.c))+'px">'+esc(String(it.c).split(/[;、]/)[0])+'</div>'+
+   '<div class="rom" style="font-size:1.25rem;font-family:var(--serif)">'+esc(it.r)+'</div><div class="rom">'+esc(it.en)+'</div>'+
+   '<div style="margin-top:12px"><button class="say" data-act="say" data-id="'+esc(it.id)+'" aria-label="Play model">🔊</button></div></div>'+
+   res+reveal+(fin?'':mic)+
+   (fin?'<button class="btn" data-act="spknext">'+(Sp.i+1>=Sp.ids.length?'Finish':'Next word')+'</button>':'<button class="mini" data-act="spknext" style="display:block;margin:6px auto">Skip this word</button>')+'</div>';
+}
+function speakSumV(){
+  const n=Sp.ids.length,first=Sp.results.filter(x=>x==='first').length,later=Sp.results.filter(x=>x==='later').length;
+  const miss=Sp.missed.map(function(id){const it=BYID[id];return '<div class="q"><div class="t"><span class="jp" style="font-family:var(--serif);font-size:1.15rem">'+esc(String(it.c).split(/[;、]/)[0])+'</span> · '+esc(spkReads(it)[0]||it.r)+'<div style="color:var(--mut);font-size:.85rem">'+esc(it.en)+'</div></div><button class="say" data-act="say" data-id="'+esc(it.id)+'" aria-label="Play">🔊</button></div>';}).join('');
+  return '<div class="pad sum"><div class="big">'+(first+later)+' / '+n+'</div><div style="color:var(--mut)">words matched by the speech recognizer</div>'+
+   '<div class="grid"><div class="stat"><b>'+first+'</b><span>first try</span></div><div class="stat"><b>'+later+'</b><span>after retry</span></div><div class="stat"><b>'+Sp.missed.length+'</b><span>to practise</span></div><div class="stat"><b>'+n+'</b><span>words</span></div></div>'+
+   (miss?'<h2>Practise these</h2><div class="card">'+miss+'</div>':'')+
+   '<div class="credit" style="margin:12px 0">This checks that the recognizer understood you. It is not a pitch-accent test, and it can be forgiving.</div>'+
+   '<button class="btn" data-act="spkstart">New speaking round</button><button class="btn alt" data-act="review">Back to review</button><button class="btn alt" data-act="home">Back home</button></div>';
 }
 
 /* ================= EVENTS ================= */
 let resetArm=false;
-function goHome(){clearTimers();Sx=null;stopAudio();view='home';render();}
+function goHome(){clearTimers();spkAbort();Sp=null;Sx=null;stopAudio();view='home';render();}
 $app.addEventListener('click',function(e){
   const el=e.target.closest('[data-act]');if(!el||el.disabled)return;
   const a=el.dataset.act,d=el.dataset;
   switch(a){
     case 'start':clearTimers();startSession();break;
     case 'blitz':clearTimers();startBlitz();break;
+    case 'review':clearTimers();spkAbort();Sp=null;Sx=null;view='review';render();break;
+    case 'rv':startReview(d.m,d.s);break;
+    case 'spkstart':startSpeak();break;
+    case 'spkgo':spkListen();break;
+    case 'spknext':spkNext();break;
     case 'home':goHome();break;
     case 'quit':goHome();break;
     case 'tab':view=d.v;render();break;
@@ -932,6 +1122,7 @@ $app.addEventListener('click',function(e){
 });
 
 (function init(){
+  try{localStorage.removeItem('nd:state:v2');}catch(e){}
   const s=Store.load();
   if(s){const def=DEF();S=Object.assign(def,s);S.settings=Object.assign(def.settings,s.settings||{});}
   ensureQuests();

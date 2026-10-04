@@ -17,3 +17,9 @@ Every word, kana, kanji and sentence has audio.
 
 ## Credits and licenses
 See LICENSES.txt.
+
+## Review
+The Review screen (Learn tab) repeats your last lesson, mixes everything you have met, targets weak spots, newest items, or one stage. Review rounds give no XP or coins and never change the spaced-repetition schedule.
+
+## Speaking practice
+Review, then Speaking practice. Say a word you have learned; the browser's speech recognizer (Chrome, needs internet and microphone permission) checks what it heard. It gives no XP or coins and is not a pitch-accent test.

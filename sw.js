@@ -1,6 +1,6 @@
 // Nihon Diary service worker: lets the app open and work offline.
 // Bump CACHE whenever you upload a changed index.html so phones pick up the update.
-const CACHE = 'nd-cache-v6';
+const CACHE = 'nd-cache-v8';
 const FILES = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
