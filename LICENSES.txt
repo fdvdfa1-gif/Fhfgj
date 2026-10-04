@@ -1,0 +1,15 @@
+VOICE CLIPS
+
+1. Native-speaker word recordings (v1.bin to v6.bin): Tofugu / WaniKani,
+   https://github.com/tofugu/japanese-vocabulary-pronunciation-audio
+   Licensed CC BY-SA 4.0. Re-encoded to mono 32 kbps and bundled; no other changes.
+   These bundled files remain under CC BY-SA 4.0.
+
+2. Synthesized clips (t1.bin to t6.bin): generated with Open JTalk using the
+   HTS voice tohoku-f01 (neutral).
+   Copyright (c) 2015 Intelligent Communication Network (Ito-Nose) Laboratory,
+   Tohoku University. Licensed CC BY 4.0.
+
+DATA
+Vocabulary: open-anki-jlpt-decks (MIT), built on JLPT lists by Jonathan Waller
+and the JMdict dictionary. Kanji data: KANJIDIC.
